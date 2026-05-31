@@ -5,57 +5,11 @@
 #include "worker.h"
 #include "token_extractor.h"
 #include "webview_login.h"
+#include "token_store.h"
+#include "service.h"
 
 #include <windows.h>
 #include <ole2.h>
-#include <fstream>
-#include <filesystem>
-
-// ---------------------------------------------------------------------------
-// Token persistence: save/load token to a file next to the exe
-// ---------------------------------------------------------------------------
-
-static std::string GetTokenFilePath() {
-    char path[MAX_PATH] = {};
-    GetModuleFileNameA(nullptr, path, MAX_PATH);
-    std::string spath(path);
-    auto pos = spath.find_last_of("\\/");
-    if (pos != std::string::npos) {
-        spath = spath.substr(0, pos + 1);
-    }
-    spath += "token.dat";
-    return spath;
-}
-
-static std::string LoadSavedToken() {
-    std::string path = GetTokenFilePath();
-    std::ifstream file(path);
-    if (!file.is_open()) return "";
-
-    std::string token;
-    std::getline(file, token);
-
-    // Trim whitespace
-    while (!token.empty() && (token.front() == ' ' || token.front() == '\t' || token.front() == '\n' || token.front() == '\r'))
-        token.erase(token.begin());
-    while (!token.empty() && (token.back() == ' ' || token.back() == '\t' || token.back() == '\n' || token.back() == '\r'))
-        token.pop_back();
-
-    return token;
-}
-
-static void SaveToken(const std::string& token) {
-    std::string path = GetTokenFilePath();
-    std::ofstream file(path, std::ios::trunc);
-    if (file.is_open()) {
-        file << token;
-    }
-}
-
-static void ClearSavedToken() {
-    std::string path = GetTokenFilePath();
-    std::filesystem::remove(path);
-}
 
 // ---------------------------------------------------------------------------
 // Splash window: shows status briefly before going to tray
@@ -170,6 +124,43 @@ static void CloseSplash(HWND hwnd) {
 // ---------------------------------------------------------------------------
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
+    // --- Command-line argument handling ---
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+
+    bool install   = false;
+    bool uninstall = false;
+    bool service   = false;
+
+    for (int i = 1; i < argc; ++i) {
+        std::wstring arg(argv[i]);
+        if (arg == L"--install" || arg == L"-i")        install   = true;
+        else if (arg == L"--uninstall" || arg == L"-u")  uninstall = true;
+        else if (arg == L"--service" || arg == L"-s")    service   = true;
+    }
+    LocalFree(argv);
+
+    if (install) {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+        bool ok = ServiceManager::Install();
+        FreeConsole();
+        return ok ? 0 : 1;
+    }
+
+    if (uninstall) {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+        bool ok = ServiceManager::Uninstall();
+        FreeConsole();
+        return ok ? 0 : 1;
+    }
+
+    if (service) {
+        ServiceManager::RunAsService();
+        return 0;
+    }
+
+    // --- GUI mode (default) ---
+
     // Single instance guard — prevent running twice
     SingleInstanceGuard guard(
         L"DiscordPresenceUpdater-{C4B1E2A0-3D5F-4A8B-9C7E-1F2A3B4C5D6E}");
@@ -190,7 +181,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     HWND splash = ShowSplash(hInstance, L"Starting Discord Presence Updater...");
 
     // Try to load a previously saved token first
-    std::string token = LoadSavedToken();
+    std::string token = TokenStore::Load();
 
     if (!token.empty()) {
         // Validate the saved token
@@ -208,7 +199,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         } else {
             // Saved token is invalid — clear it and try other methods
             token.clear();
-            ClearSavedToken();
+            TokenStore::Clear();
             UpdateSplash(splash, L"Token expired, re-authenticating...");
         }
     }
@@ -236,7 +227,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     }
 
     // Save the token for next launch
-    SaveToken(token);
+    TokenStore::Save(token);
 
     // Show connected splash (if not already showing)
     if (!splash) {
@@ -268,7 +259,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         }
 
         if (!new_token.empty()) {
-            SaveToken(new_token);
+            TokenStore::Save(new_token);
             worker.SetToken(new_token);
             worker.Start();
         }
@@ -279,7 +270,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     // Set logout callback: clear the token
     tray.SetLogoutCallback([&worker]() {
         worker.ClearToken();
-        ClearSavedToken();
+        TokenStore::Clear();
     });
 
     // Set tooltip provider: periodically refresh tooltip with worker status

@@ -2,8 +2,8 @@
 
 #include <algorithm>
 
-Worker::Worker(const AppConfig& config)
-    : config_(config), api_("") {} // token set later via SetToken
+Worker::Worker(const AppConfig& config, WorkerMode mode)
+    : config_(config), mode_(mode), api_("") {} // token set later via SetToken
 
 Worker::~Worker() {
     Stop();
@@ -42,12 +42,17 @@ void Worker::ClearToken() {
     UpdateStatus("Logged out");
 }
 
+void Worker::SetLogCallback(LogCallback cb) {
+    log_callback_ = std::move(cb);
+}
+
 // ---------------------------------------------------------------------------
 // Main Loop
 // ---------------------------------------------------------------------------
 
 void Worker::RunLoop() {
     UpdateStatus("Starting...");
+    if (log_callback_) log_callback_("Worker started");
 
     while (!stop_requested_.load()) {
         // 1. Ensure we have a valid token
@@ -77,6 +82,7 @@ void Worker::RunLoop() {
         api_.ClearCustomStatus();
     }
     UpdateStatus("Stopped");
+    if (log_callback_) log_callback_("Worker stopped");
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +94,7 @@ bool Worker::EnsureTokenValid() {
         return true;
     }
     UpdateStatus("No valid token");
+    if (log_callback_) log_callback_("No valid token - waiting for re-authentication");
     return false;
 }
 
@@ -101,7 +108,18 @@ std::pair<ActivityConfig, std::string> Worker::DetermineActivity() {
         targets.insert(name);
     }
 
-    // Check the foreground (focused) window's process first
+    if (mode_ == WorkerMode::Service) {
+        // Service mode: scan all running processes (GetForegroundWindow
+        // returns NULL in Session 0, so foreground detection won't work).
+        // Reports the first matching process as active.
+        std::string match = monitor_.FindMatchingProcess(targets);
+        if (!match.empty()) {
+            return {config_.activities[match], match};
+        }
+        return {config_.default_activity, "idle"};
+    }
+
+    // GUI mode: check the foreground (focused) window's process
     std::string fg = monitor_.GetForegroundProcessName();
     if (!fg.empty() && targets.count(fg)) {
         return {config_.activities[fg], fg};
@@ -130,13 +148,17 @@ void Worker::UpdatePresence(const ActivityConfig& cfg, const std::string& proces
         } else {
             UpdateStatus("Connected - " + cfg.text);
         }
+        if (log_callback_) log_callback_("Status updated: " + (process_name == "idle" ? std::string("Idle") : cfg.text));
     } else if (result == ApiResult::Unauthorized) {
         has_valid_token_ = false;
         UpdateStatus("Token expired");
+        if (log_callback_) log_callback_("Token expired or unauthorized");
     } else if (result == ApiResult::RateLimited) {
         UpdateStatus("Rate limited");
+        if (log_callback_) log_callback_("Rate limited by Discord API");
     } else {
         UpdateStatus("API error");
+        if (log_callback_) log_callback_("Discord API error");
     }
 }
 

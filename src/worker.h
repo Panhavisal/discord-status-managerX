@@ -5,14 +5,26 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <functional>
 #include "config.h"
 #include "discord_api.h"
 #include "process_monitor.h"
 #include "token_extractor.h"
 
+// WorkerMode controls how process detection works:
+// - GUI:     Uses GetForegroundProcessName (focused window only)
+// - Service: Uses FindMatchingProcess (any running process, for Session 0)
+enum class WorkerMode {
+    GUI,
+    Service
+};
+
+// Callback for logging status messages (used by service mode)
+using LogCallback = std::function<void(const std::string&)>;
+
 class Worker {
 public:
-    explicit Worker(const AppConfig& config);
+    explicit Worker(const AppConfig& config, WorkerMode mode = WorkerMode::GUI);
     ~Worker();
 
     void Start();
@@ -27,6 +39,9 @@ public:
     // Clear the token and mark as logged out
     void ClearToken();
 
+    // Set a callback for logging status messages (used by service mode)
+    void SetLogCallback(LogCallback cb);
+
 private:
     void RunLoop();
     bool EnsureTokenValid();
@@ -36,9 +51,11 @@ private:
     void InterruptibleSleep(DWORD ms);
 
     AppConfig       config_;
+    WorkerMode      mode_ = WorkerMode::GUI;
     ProcessMonitor  monitor_;
     DiscordApi      api_;
 
+    LogCallback     log_callback_;
     std::thread     worker_thread_;
     std::atomic<bool> stop_requested_{false};
 

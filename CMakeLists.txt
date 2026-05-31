@@ -46,6 +46,8 @@ add_executable(${PROJECT_NAME} WIN32
     src/worker.cpp
     src/setup_dialog.cpp
     src/webview_login.cpp
+    src/token_store.cpp
+    src/service.cpp
     res/app.rc
 )
 
