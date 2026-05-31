@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Background circle with Discord blurple -->
+  <circle cx="128" cy="128" r="120" fill="#5865F2"/>
+  <circle cx="128" cy="128" r="110" fill="#4752C4"/>
+
+  <!-- Game controller shape (simplified) -->
+  <path d="M80 88 Q80 72 96 72 L160 72 Q176 72 176 88 L176 136 Q176 152 160 160 L152 164 Q148 166 146 162 L138 148 Q136 144 132 144 L124 144 Q120 144 118 148 L110 162 Q108 166 104 164 L96 160 Q80 152 80 136 Z"
+        fill="#FFFFFF" opacity="0.95"/>
+
+  <!-- D-Pad left -->
+  <rect x="96" y="100" width="12" height="28" rx="2" fill="#5865F2"/>
+  <rect x="90" y="106" width="24" height="16" rx="2" fill="#5865F2"/>
+
+  <!-- D-Pad right area (action buttons) -->
+  <circle cx="156" cy="104" r="5" fill="#5865F2"/>
+  <circle cx="166" cy="114" r="5" fill="#5865F2"/>
+  <circle cx="146" cy="114" r="5" fill="#5865F2"/>
+  <circle cx="156" cy="124" r="5" fill="#5865F2"/>
+
+  <!-- Status indicator dot (green = online) -->
+  <circle cx="172" cy="178" r="22" fill="#23272A"/>
+  <circle cx="172" cy="178" r="18" fill="#57F287"/>
+
+  <!-- Pulse ring around status -->
+  <circle cx="172" cy="178" r="22" fill="none" stroke="#57F287" stroke-width="2" opacity="0.5"/>
+</svg>
