@@ -37,6 +37,7 @@ struct WebViewLoginState {
     bool        confirmed       = false;
     bool        creation_failed = false;
     bool        webview_ready   = false;
+    bool        dialog_done     = false;  // set to true when window is destroyed
 
     ICoreWebView2*            webview    = nullptr;
     ICoreWebView2Controller*  controller = nullptr;
@@ -144,8 +145,8 @@ static LRESULT CALLBACK LoginWndProc(HWND hwnd, UINT msg,
                 state->controller->Release();
                 state->controller = nullptr;
             }
+            state->dialog_done = true;
         }
-        PostQuitMessage(0);
         return 0;
     }
 
@@ -374,14 +375,16 @@ std::string ShowWebView2LoginDialog(HINSTANCE h_instance, HWND parent) {
     }
 
     // ---------------------------------------------------------------
-    // Run modal message loop (blocks until WM_DESTROY / PostQuitMessage)
+    // Run modal message loop (blocks until window is destroyed)
+    // Do NOT use PostQuitMessage — it would leak WM_QUIT into the
+    // calling app's message loop and exit the entire application.
     // ---------------------------------------------------------------
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
-        if (!IsWindow(hwnd)) break;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
+        if (state.dialog_done) break;
     }
 
     // Cleanup

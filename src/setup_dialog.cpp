@@ -28,6 +28,7 @@ static constexpr int ID_LINK_HELP     = 1002;
 struct SetupState {
     std::string token;
     bool        confirmed = false;
+    bool        dialog_done = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -111,7 +112,7 @@ static LRESULT CALLBACK SetupWndProc(HWND hwnd, UINT msg,
         return 0;
 
     case WM_DESTROY:
-        PostQuitMessage(0);
+        state->dialog_done = true;
         return 0;
     }
 
@@ -254,11 +255,11 @@ std::string ShowSetupDialog(HINSTANCE h_instance, HWND parent) {
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
-        if (!IsWindow(hwnd)) break;
         if (!IsDialogMessageW(hwnd, &msg)) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        if (state.dialog_done) break;
     }
 
     DeleteObject(hFontBold);

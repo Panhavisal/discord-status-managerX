@@ -8,6 +8,166 @@
 
 #include <windows.h>
 #include <ole2.h>
+#include <fstream>
+#include <filesystem>
+
+// ---------------------------------------------------------------------------
+// Token persistence: save/load token to a file next to the exe
+// ---------------------------------------------------------------------------
+
+static std::string GetTokenFilePath() {
+    char path[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, path, MAX_PATH);
+    std::string spath(path);
+    auto pos = spath.find_last_of("\\/");
+    if (pos != std::string::npos) {
+        spath = spath.substr(0, pos + 1);
+    }
+    spath += "token.dat";
+    return spath;
+}
+
+static std::string LoadSavedToken() {
+    std::string path = GetTokenFilePath();
+    std::ifstream file(path);
+    if (!file.is_open()) return "";
+
+    std::string token;
+    std::getline(file, token);
+
+    // Trim whitespace
+    while (!token.empty() && (token.front() == ' ' || token.front() == '\t' || token.front() == '\n' || token.front() == '\r'))
+        token.erase(token.begin());
+    while (!token.empty() && (token.back() == ' ' || token.back() == '\t' || token.back() == '\n' || token.back() == '\r'))
+        token.pop_back();
+
+    return token;
+}
+
+static void SaveToken(const std::string& token) {
+    std::string path = GetTokenFilePath();
+    std::ofstream file(path, std::ios::trunc);
+    if (file.is_open()) {
+        file << token;
+    }
+}
+
+static void ClearSavedToken() {
+    std::string path = GetTokenFilePath();
+    std::filesystem::remove(path);
+}
+
+// ---------------------------------------------------------------------------
+// Splash window: shows status briefly before going to tray
+// ---------------------------------------------------------------------------
+
+static const wchar_t SPLASH_CLASS[] = L"DiscordPresenceSplashWnd";
+
+static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg,
+                                       WPARAM wparam, LPARAM lparam) {
+    return DefWindowProcW(hwnd, msg, wparam, lparam);
+}
+
+// Shows a small centered window with a status message for a few seconds.
+// Returns the HWND so the caller can update the text or close it.
+static HWND ShowSplash(HINSTANCE h_instance, const std::wstring& message) {
+    static bool class_registered = false;
+    if (!class_registered) {
+        WNDCLASSEXW wc = {};
+        wc.cbSize        = sizeof(wc);
+        wc.lpfnWndProc   = SplashWndProc;
+        wc.hInstance      = h_instance;
+        wc.hCursor        = LoadCursor(nullptr, IDC_ARROW);
+        wc.hbrBackground  = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        wc.lpszClassName  = SPLASH_CLASS;
+        RegisterClassExW(&wc);
+        class_registered = true;
+    }
+
+    constexpr int WIDTH = 360;
+    constexpr int HEIGHT = 100;
+
+    HWND hwnd = CreateWindowExW(
+        WS_EX_TOOLWINDOW | WS_EX_APPWINDOW,
+        SPLASH_CLASS,
+        L"Discord Presence Updater",
+        WS_OVERLAPPED | WS_CAPTION,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        WIDTH, HEIGHT,
+        nullptr, nullptr, h_instance, nullptr
+    );
+    if (!hwnd) return nullptr;
+
+    // Center on screen
+    RECT rc;
+    GetWindowRect(hwnd, &rc);
+    SetWindowPos(hwnd, nullptr,
+        (GetSystemMetrics(SM_CXSCREEN) - (rc.right - rc.left)) / 2,
+        (GetSystemMetrics(SM_CYSCREEN) - (rc.bottom - rc.top)) / 2,
+        0, 0, SWP_NOZORDER | SWP_NOSIZE);
+
+    HFONT hFont = CreateFontW(
+        -14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+
+    HWND hLabel = CreateWindowExW(0, L"STATIC", L"",
+        WS_CHILD | WS_VISIBLE | SS_CENTER,
+        10, 25, WIDTH - 40, 40,
+        hwnd, nullptr, h_instance, nullptr);
+    SendMessageW(hLabel, WM_SETFONT, reinterpret_cast<WPARAM>(hFont), TRUE);
+    SetWindowTextW(hLabel, message.c_str());
+
+    ShowWindow(hwnd, SW_SHOW);
+    UpdateWindow(hwnd);
+
+    // Process messages so the window actually paints
+    MSG msg;
+    while (PeekMessageW(&msg, hwnd, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+
+    return hwnd;
+}
+
+// Update splash text
+static void UpdateSplash(HWND hwnd, const std::wstring& message) {
+    HWND hLabel = FindWindowExW(hwnd, nullptr, L"STATIC", nullptr);
+    if (hLabel) {
+        SetWindowTextW(hLabel, message.c_str());
+    }
+    // Process messages so the update paints
+    MSG msg;
+    while (PeekMessageW(&msg, hwnd, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+}
+
+// Close and clean up splash
+static void CloseSplash(HWND hwnd) {
+    if (!hwnd) return;
+    // Pump remaining messages briefly so the window finishes painting
+    MSG msg;
+    while (PeekMessageW(&msg, hwnd, 0, 0, PM_REMOVE)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+    // Extract the font before destroying
+    HWND hLabel = FindWindowExW(hwnd, nullptr, L"STATIC", nullptr);
+    HFONT hFont = nullptr;
+    if (hLabel) {
+        hFont = reinterpret_cast<HFONT>(
+            SendMessageW(hLabel, WM_GETFONT, 0, 0));
+    }
+    DestroyWindow(hwnd);
+    if (hFont) DeleteObject(hFont);
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     // Single instance guard — prevent running twice
@@ -26,8 +186,39 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     std::string config_path = Config::GetDefaultConfigPath();
     AppConfig config = Config::Load(config_path);
 
-    // Try to auto-extract Discord token from local storage
-    std::string token = TryAutoExtractToken(hInstance);
+    // Show splash window
+    HWND splash = ShowSplash(hInstance, L"Starting Discord Presence Updater...");
+
+    // Try to load a previously saved token first
+    std::string token = LoadSavedToken();
+
+    if (!token.empty()) {
+        // Validate the saved token
+        UpdateSplash(splash, L"Validating saved token...");
+        MSG msg;
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+
+        std::string username;
+        if (TokenExtractor::ValidateToken(token, username)) {
+            std::wstring status = L"Connected as " + std::wstring(username.begin(), username.end());
+            UpdateSplash(splash, status.c_str());
+        } else {
+            // Saved token is invalid — clear it and try other methods
+            token.clear();
+            ClearSavedToken();
+            UpdateSplash(splash, L"Token expired, re-authenticating...");
+        }
+    }
+
+    // If no saved token, try auto-extraction from Discord local storage
+    if (token.empty()) {
+        CloseSplash(splash);
+        splash = nullptr;
+        token = TryAutoExtractToken(hInstance);
+    }
 
     // If auto-extraction failed, try WebView2 login
     if (token.empty()) {
@@ -42,6 +233,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
             OleUninitialize();
             return 0;
         }
+    }
+
+    // Save the token for next launch
+    SaveToken(token);
+
+    // Show connected splash (if not already showing)
+    if (!splash) {
+        splash = ShowSplash(hInstance, L"Connected!");
     }
 
     // Create and start the worker thread
@@ -69,6 +268,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         }
 
         if (!new_token.empty()) {
+            SaveToken(new_token);
             worker.SetToken(new_token);
             worker.Start();
         }
@@ -79,6 +279,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     // Set logout callback: clear the token
     tray.SetLogoutCallback([&worker]() {
         worker.ClearToken();
+        ClearSavedToken();
     });
 
     // Set tooltip provider: periodically refresh tooltip with worker status
@@ -91,9 +292,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
 
     if (!tray.Initialize()) {
         worker.Stop();
+        CloseSplash(splash);
         OleUninitialize();
         return 1;
     }
+
+    // Keep splash visible for a moment so user sees the "Connected" message
+    Sleep(1500);
+    CloseSplash(splash);
 
     // Run message loop (blocks until quit)
     tray.Run();
