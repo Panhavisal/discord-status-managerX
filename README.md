@@ -18,6 +18,8 @@ A lightweight Windows desktop app that automatically updates your Discord custom
   - **Edit Config** — Open `config.json` in your default editor
   - **Quit** — Exit the app
 - **50+ app detections** — VS Code, Cursor, Visual Studio, IntelliJ IDEA, WebStorm, PyCharm, Chrome, Firefox, Steam, Spotify, and many more
+- **Windows Service support** — Install as an auto-start service with `--install`, runs headlessly on boot. See [SERVICE.md](SERVICE.md)
+- **Encrypted token storage** — Your Discord token is encrypted at rest using Windows DPAPI (machine-bound, cannot be copied to another PC)
 - **Fully configurable** — Edit `config.json` to add, remove, or change app mappings and status text
 
 ## Screenshots
@@ -96,10 +98,12 @@ The output will be in `build/Release/`.
 
 ```
 src/
-├── main.cpp              # Entry point, token acquisition flow
+├── main.cpp              # Entry point, CLI flags, token acquisition flow
 ├── config.cpp/h          # JSON config loader
 ├── discord_api.cpp/h     # Discord API client (WinINet)
 ├── token_extractor.cpp/h # LevelDB token extraction, DPAPI, AES-GCM
+├── token_store.cpp/h     # Token persistence (encrypted with DPAPI)
+├── service.cpp/h         # Windows Service infrastructure (install/run/uninstall)
 ├── webview_login.cpp/h   # WebView2 Discord login dialog
 ├── setup_dialog.cpp/h    # Manual token entry dialog
 ├── worker.cpp/h          # Background process polling & status updates
@@ -112,7 +116,7 @@ src/
 
 - Your Discord credentials are **never** seen by this app. The WebView2 login window loads Discord's official website — you enter your password directly into Discord.
 - The app only captures the `Authorization` header from browser network requests after you log in. This is the same token that Discord stores in your browser session.
-- The token is held in memory only and is **never written to disk** by this app.
+- The token is encrypted at rest using **Windows DPAPI** (Data Protection API) and stored in `token.dat`. The encrypted file is machine-bound — it cannot be decrypted on a different PC or user account.
 - All API calls go directly to `discord.com` over HTTPS.
 
 ## License
