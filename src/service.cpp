@@ -33,8 +33,10 @@ bool ServiceManager::Install() {
 
     SC_HANDLE h_sc = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CREATE_SERVICE);
     if (!h_sc) {
-        printf("Failed to open Service Control Manager. Error: %lu\n", GetLastError());
-        printf("Make sure you are running as Administrator.\n");
+        DWORD err = GetLastError();
+        wchar_t msg[512];
+        swprintf_s(msg, L"Failed to open Service Control Manager.\n\nError: %lu\n\nMake sure you are running as Administrator.", err);
+        MessageBoxW(nullptr, msg, L"Install Service — Error", MB_OK | MB_ICONERROR);
         return false;
     }
 
@@ -54,13 +56,16 @@ bool ServiceManager::Install() {
 
     if (!h_svc) {
         DWORD err = GetLastError();
+        CloseServiceHandle(h_sc);
+
         if (err == ERROR_SERVICE_EXISTS) {
-            printf("Service already exists.\n");
-            CloseServiceHandle(h_sc);
+            MessageBoxW(nullptr, L"Service already exists.", L"Install Service", MB_OK | MB_ICONINFORMATION);
             return true; // Not an error
         }
-        printf("Failed to create service. Error: %lu\n", err);
-        CloseServiceHandle(h_sc);
+
+        wchar_t msg[512];
+        swprintf_s(msg, L"Failed to create service.\n\nError: %lu", err);
+        MessageBoxW(nullptr, msg, L"Install Service — Error", MB_OK | MB_ICONERROR);
         return false;
     }
 
@@ -70,13 +75,13 @@ bool ServiceManager::Install() {
         L"Monitors running applications and updates your Discord custom status accordingly.";
     ChangeServiceConfig2W(h_svc, SERVICE_CONFIG_DESCRIPTION, &desc);
 
-    printf("Service installed successfully.\n");
-    printf("  Name:    %ls\n", kServiceDisplayName);
-    printf("  Binary:  %ls\n", binary_path.c_str());
-    printf("  Account: LocalSystem\n");
-    printf("  Start:   Automatic\n");
-    printf("\nUse 'sc start %s' or 'net start %s' to start the service.\n",
-           kServiceName, kServiceName);
+    std::wstring msg = L"Service installed successfully!\n\n"
+        L"Name:    " + std::wstring(kServiceDisplayName) + L"\n"
+        L"Binary:  " + binary_path + L"\n"
+        L"Account: LocalSystem\n"
+        L"Start:   Automatic\n\n"
+        L"Use 'sc start DiscordPresenceUpdater' to start.";
+    MessageBoxW(nullptr, msg.c_str(), L"Install Service", MB_OK | MB_ICONINFORMATION);
 
     CloseServiceHandle(h_svc);
     CloseServiceHandle(h_sc);
@@ -86,15 +91,20 @@ bool ServiceManager::Install() {
 bool ServiceManager::Uninstall() {
     SC_HANDLE h_sc = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
     if (!h_sc) {
-        printf("Failed to open Service Control Manager. Error: %lu\n", GetLastError());
-        printf("Make sure you are running as Administrator.\n");
+        DWORD err = GetLastError();
+        wchar_t msg[512];
+        swprintf_s(msg, L"Failed to open Service Control Manager.\n\nError: %lu\n\nMake sure you are running as Administrator.", err);
+        MessageBoxW(nullptr, msg, L"Uninstall Service — Error", MB_OK | MB_ICONERROR);
         return false;
     }
 
     SC_HANDLE h_svc = OpenServiceW(h_sc, kServiceNameW,
                                     SERVICE_STOP | DELETE | SERVICE_QUERY_STATUS);
     if (!h_svc) {
-        printf("Service not found. Error: %lu\n", GetLastError());
+        DWORD err = GetLastError();
+        wchar_t msg[512];
+        swprintf_s(msg, L"Service not found.\n\nError: %lu", err);
+        MessageBoxW(nullptr, msg, L"Uninstall Service", MB_OK | MB_ICONWARNING);
         CloseServiceHandle(h_sc);
         return false;
     }
@@ -102,7 +112,6 @@ bool ServiceManager::Uninstall() {
     // Try to stop the service first
     SERVICE_STATUS status = {};
     if (ControlService(h_svc, SERVICE_CONTROL_STOP, &status)) {
-        printf("Stopping service...\n");
         // Wait for the service to stop (up to 10 seconds)
         for (int i = 0; i < 10; ++i) {
             if (!QueryServiceStatus(h_svc, &status)) break;
@@ -112,13 +121,15 @@ bool ServiceManager::Uninstall() {
     }
 
     if (DeleteService(h_svc)) {
-        printf("Service uninstalled successfully.\n");
+        MessageBoxW(nullptr, L"Service uninstalled successfully.", L"Uninstall Service", MB_OK | MB_ICONINFORMATION);
     } else {
         DWORD err = GetLastError();
         if (err == ERROR_SERVICE_MARKED_DELETE) {
-            printf("Service marked for deletion (will be removed after stopping).\n");
+            MessageBoxW(nullptr, L"Service marked for deletion.\nIt will be fully removed after stopping.", L"Uninstall Service", MB_OK | MB_ICONINFORMATION);
         } else {
-            printf("Failed to delete service. Error: %lu\n", err);
+            wchar_t msg[512];
+            swprintf_s(msg, L"Failed to delete service.\n\nError: %lu", err);
+            MessageBoxW(nullptr, msg, L"Uninstall Service — Error", MB_OK | MB_ICONERROR);
         }
     }
 

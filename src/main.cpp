@@ -141,16 +141,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     LocalFree(argv);
 
     if (install) {
-        AttachConsole(ATTACH_PARENT_PROCESS);
         bool ok = ServiceManager::Install();
-        FreeConsole();
         return ok ? 0 : 1;
     }
 
     if (uninstall) {
-        AttachConsole(ATTACH_PARENT_PROCESS);
         bool ok = ServiceManager::Uninstall();
-        FreeConsole();
         return ok ? 0 : 1;
     }
 
