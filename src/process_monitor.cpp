@@ -54,3 +54,36 @@ std::string ProcessMonitor::FindMatchingProcess(const std::unordered_set<std::st
     CloseHandle(snap);
     return result;
 }
+
+std::string ProcessMonitor::GetForegroundProcessName() const {
+    // Get the window the user is currently focused on
+    HWND fg = GetForegroundWindow();
+    if (!fg) return "";
+
+    // Get the process ID that owns the foreground window
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    if (pid == 0) return "";
+
+    // Look up the exe name for that PID
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) {
+        return "";
+    }
+
+    PROCESSENTRY32 pe = {};
+    pe.dwSize = sizeof(pe);
+
+    std::string result;
+    if (Process32First(snap, &pe)) {
+        do {
+            if (pe.th32ProcessID == pid) {
+                result = ToLower(pe.szExeFile);
+                break;
+            }
+        } while (Process32Next(snap, &pe));
+    }
+
+    CloseHandle(snap);
+    return result;
+}

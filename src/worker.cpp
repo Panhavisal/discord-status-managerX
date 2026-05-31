@@ -101,10 +101,13 @@ std::pair<ActivityConfig, std::string> Worker::DetermineActivity() {
         targets.insert(name);
     }
 
-    std::string match = monitor_.FindMatchingProcess(targets);
-    if (!match.empty()) {
-        return {config_.activities[match], match};
+    // Check the foreground (focused) window's process first
+    std::string fg = monitor_.GetForegroundProcessName();
+    if (!fg.empty() && targets.count(fg)) {
+        return {config_.activities[fg], fg};
     }
+
+    // No matching foreground app — show idle/default
     return {config_.default_activity, "idle"};
 }
 
