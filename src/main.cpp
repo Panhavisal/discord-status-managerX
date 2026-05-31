@@ -301,6 +301,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     Sleep(1500);
     CloseSplash(splash);
 
+    // Clean up the splash window class (no longer needed)
+    UnregisterClassW(SPLASH_CLASS, hInstance);
+
     // Run message loop (blocks until quit)
     tray.Run();
 

@@ -306,7 +306,8 @@ std::string ShowWebView2LoginDialog(HINSTANCE h_instance, HWND parent) {
             PostMessage(state.hwnd, WM_CLOSE, 0, 0);
             return S_OK;
         }
-        state.webview->AddRef();
+        // Note: get_CoreWebView2 already AddRefs the returned pointer,
+        // so no additional AddRef is needed here.
 
         // Add resource request filters to intercept Discord API calls.
         // Use FETCH in addition to XML_HTTP_REQUEST since modern Discord
@@ -390,6 +391,7 @@ std::string ShowWebView2LoginDialog(HINSTANCE h_instance, HWND parent) {
     // Cleanup
     DeleteObject(hBannerFont);
     UnregisterClassW(LOGIN_CLASS, h_instance);
+    class_registered = false;
 
     return state.confirmed ? state.token : "";
 }

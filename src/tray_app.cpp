@@ -26,10 +26,10 @@ TrayApp::~TrayApp() {
     DrainPendingTooltips();
     if (hwnd_) {
         DestroyWindow(hwnd_);
+        hwnd_ = nullptr;
     }
-    if (h_icon_) {
-        DestroyIcon(h_icon_);
-    }
+    // Note: h_icon_ was loaded with LR_SHARED, so DestroyIcon is not needed.
+    // Shared icons are managed by the system and are valid until the module is unloaded.
     UnregisterClassW(L"DiscordPresenceTrayWnd", h_instance_);
 }
 
@@ -301,9 +301,11 @@ LRESULT TrayApp::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 
         case IDM_QUIT:
             if (quit_callback_) quit_callback_();
-            RemoveTrayIcon();
-            DestroyWindow(hwnd_);
-            PostQuitMessage(0);
+            if (hwnd_) {
+                DestroyWindow(hwnd_);
+            } else {
+                PostQuitMessage(0);
+            }
             break;
 
         default:
@@ -329,6 +331,7 @@ LRESULT TrayApp::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     case WM_DESTROY:
         KillTimer(hwnd, TIMER_TOOLTIP);
         RemoveTrayIcon();
+        hwnd_ = nullptr;
         PostQuitMessage(0);
         return 0;
 

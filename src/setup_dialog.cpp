@@ -264,6 +264,7 @@ std::string ShowSetupDialog(HINSTANCE h_instance, HWND parent) {
 
     DeleteObject(hFontBold);
     UnregisterClassW(SETUP_CLASS, h_instance);
+    class_registered = false;
 
     return state.confirmed ? state.token : "";
 }
@@ -353,6 +354,7 @@ std::string TryAutoExtractToken(HINSTANCE h_instance) {
 
     DestroyWindow(hwnd);
     UnregisterClassW(PROGRESS_CLASS, h_instance);
+    class_registered = false;
 
     return valid_token;
 }
