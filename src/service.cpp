@@ -75,12 +75,45 @@ bool ServiceManager::Install() {
         L"Monitors running applications and updates your Discord custom status accordingly.";
     ChangeServiceConfig2W(h_svc, SERVICE_CONFIG_DESCRIPTION, &desc);
 
-    std::wstring msg = L"Service installed successfully!\n\n"
+    // Configure delayed auto-start: the service starts after the network is ready,
+    // which is critical since it needs to contact the Discord API.
+    SERVICE_DELAYED_AUTO_START_INFO delayed_info = {};
+    delayed_info.fDelayedAutostart = TRUE;
+    ChangeServiceConfig2W(h_svc, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &delayed_info);
+
+    // Configure failure recovery: restart the service on failure.
+    // - First failure: restart after 60 seconds
+    // - Second failure: restart after 120 seconds
+    // - Subsequent failures: restart after 300 seconds
+    // - Reset failure counter after 86400 seconds (24 hours)
+    SERVICE_FAILURE_ACTIONSW fail_actions = {};
+    fail_actions.dwResetPeriod = 86400; // 24 hours
+    SC_ACTION actions[3] = {};
+    actions[0].Type = SC_ACTION_RESTART;
+    actions[0].Delay = 60000;   // 60 seconds
+    actions[1].Type = SC_ACTION_RESTART;
+    actions[1].Delay = 120000;  // 120 seconds
+    actions[2].Type = SC_ACTION_RESTART;
+    actions[2].Delay = 300000;  // 300 seconds
+    fail_actions.cActions = 3;
+    fail_actions.lpsaActions = actions;
+    ChangeServiceConfig2W(h_svc, SERVICE_CONFIG_FAILURE_ACTIONS, &fail_actions);
+
+    // Start the service immediately after installation
+    if (!StartServiceW(h_svc, 0, nullptr)) {
+        DWORD err = GetLastError();
+        wchar_t warn[512];
+        swprintf_s(warn, L"Service installed but could not be started.\n\nError: %lu\n\n"
+                   L"The service will start automatically on the next boot.", err);
+        MessageBoxW(nullptr, warn, L"Install Service — Warning", MB_OK | MB_ICONWARNING);
+    }
+
+    std::wstring msg = L"Service installed and started successfully!\n\n"
         L"Name:    " + std::wstring(kServiceDisplayName) + L"\n"
         L"Binary:  " + binary_path + L"\n"
         L"Account: LocalSystem\n"
-        L"Start:   Automatic\n\n"
-        L"Use 'sc start DiscordPresenceUpdater' to start.";
+        L"Start:   Automatic (Delayed)\n\n"
+        L"The service will also auto-start on Windows boot.";
     MessageBoxW(nullptr, msg.c_str(), L"Install Service", MB_OK | MB_ICONINFORMATION);
 
     CloseServiceHandle(h_svc);
@@ -265,20 +298,24 @@ void ServiceManager::ServiceWorker() {
         return; // Will report SERVICE_STOPPED with error
     }
 
-    // 3. Validate the token
+    // 3. Try to validate the token (best-effort; may fail at boot when network
+    //    isn't ready yet). We don't exit on failure — the Worker's retry loop
+    //    will re-validate periodically until the network comes up.
     Log("Validating token...");
     std::string username;
-    if (!TokenExtractor::ValidateToken(token, username)) {
-        Log("ERROR: Saved token is invalid or expired. Cannot start service. "
-            "Run the application in GUI mode to re-authenticate.");
-        return;
+    if (TokenExtractor::ValidateToken(token, username)) {
+        Log(std::string("Authenticated as: ") + username);
+    } else {
+        Log("Token validation failed (network may not be ready yet). "
+            "Worker will retry periodically.");
     }
 
-    Log(std::string("Authenticated as: ") + username);
     ReportStatus(SERVICE_RUNNING);
     Log("Service is running.");
 
-    // 4. Create and start the worker in service mode
+    // 4. Create and start the worker in service mode.
+    //    Worker::SetToken() may also fail validation, but the Worker's
+    //    EnsureTokenValid() will retry every 60 seconds.
     Worker worker(config, WorkerMode::Service);
     worker.SetToken(token);
     worker.SetLogCallback([](const std::string& msg) {

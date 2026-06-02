@@ -68,4 +68,5 @@ private:
 
     // Token state
     bool            has_valid_token_ = false;
+    DWORD           last_validate_attempt_time_ = 0; // for retry cooldown
 };

@@ -39,6 +39,9 @@ public:
     // Update the token (e.g., after re-extraction).
     void SetToken(const std::string& token);
 
+    // Check if a token string has been set (regardless of validity).
+    bool HasToken() const { return !token_.empty(); }
+
 private:
     // Internal HTTP PATCH helper
     ApiResult PatchSettings(const std::string& json_body);

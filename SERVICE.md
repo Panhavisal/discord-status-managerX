@@ -12,14 +12,11 @@ The Discord Status Manager can run as a **Windows Service** that auto-starts on 
 # 1. Run the app once in GUI mode to authenticate
 DiscordStatusUpdater.exe
 
-# 2. Install the service (requires Administrator)
+# 2. Install and start the service (requires Administrator)
 DiscordStatusUpdater.exe --install
-
-# 3. Start the service
-sc start DiscordPresenceUpdater
 ```
 
-That's it. Your Discord status will now update automatically on every boot.
+That's it. The service starts immediately and will auto-start on every boot.
 
 ---
 
@@ -56,24 +53,21 @@ DiscordStatusUpdater.exe --install
 
 Output:
 ```
-Service installed successfully.
+Service installed and started successfully!
   Name:    Discord Presence Updater
   Binary:  "C:\path\to\DiscordStatusUpdater.exe" --service
   Account: LocalSystem
-  Start:   Automatic
+  Start:   Automatic (Delayed)
+
+The service will also auto-start on Windows boot.
 ```
 
-The service is configured for **automatic startup** — it will run on every boot.
+The service is configured for **automatic (delayed) startup** — it starts after the network is ready, ensuring it can reach the Discord API. It also includes **failure recovery**: if the service crashes or exits unexpectedly, Windows will automatically restart it (after 60s, then 120s, then 300s).
 
-### 3. Start the Service
+### 3. Check Service Status
 
 ```powershell
-sc start DiscordPresenceUpdater
-```
-
-Or alternatively:
-```powershell
-net start DiscordPresenceUpdater
+sc query DiscordPresenceUpdater
 ```
 
 ### 4. Check Service Status
@@ -126,7 +120,8 @@ This stops the service (if running) and removes it from the Service Control Mana
 |---|---|---|
 | **How to start** | Double-click the exe | `sc start` or auto-start on boot |
 | **Token acquisition** | Auto-extract → WebView2 → Manual | Reads encrypted `token.dat` only |
-| **If token is invalid** | Shows re-login dialog | Logs error and stops the service |
+| **If token is invalid** | Shows re-login dialog | Retries validation every 60s until network is ready or token is re-saved |
+| **If service crashes** | N/A | Auto-restarted by SCM (failure recovery) |
 | **Process detection** | Foreground (focused) window | All running processes |
 | **UI** | Splash screen, tray icon, menus | None (headless) |
 | **Logging** | Tray tooltip | Windows Event Log + OutputDebugString |
@@ -154,6 +149,7 @@ Common errors:
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `No token found in token.dat` | Token was never saved | Run the app in GUI mode first to authenticate |
+| `Token validation failed (network may not be ready)` | Network not available at boot | Normal — the service will retry every 60s automatically |
 | `Saved token is invalid or expired` | Token expired or was revoked | Run in GUI mode to re-authenticate, then restart the service |
 | `StartServiceCtrlDispatcher failed` | `--service` flag was not in the binary path | Reinstall: `DiscordStatusUpdater.exe --uninstall` then `--install` |
 
@@ -191,7 +187,8 @@ sc start DiscordPresenceUpdater
 │              ServiceMain                      │
 │  ┌─────────────────────────────────────────┐ │
 │  │  1. Load config.json                     │ │
-│  │  2. Load & validate token from token.dat │ │
+│  │  2. Load token from token.dat (best-effort│ │
+│  │     validation — retries if network down)│ │
 │  │  3. Start Worker (background thread)     │ │
 │  │  4. Wait for SCM stop signal            │ │
 │  │  5. Stop worker, clean up               │ │

@@ -29,6 +29,7 @@ std::string Worker::GetStatusText() const {
 
 void Worker::SetToken(const std::string& token) {
     api_.SetToken(token);
+    last_validate_attempt_time_ = GetTickCount();
     has_valid_token_ = api_.ValidateToken();
     if (has_valid_token_) {
         last_sent_process_.clear(); // force re-send
@@ -93,6 +94,26 @@ bool Worker::EnsureTokenValid() {
     if (has_valid_token_) {
         return true;
     }
+
+    // If a token string is set but not yet validated, retry validation periodically.
+    // This handles the boot-time case where the network isn't ready yet.
+    if (api_.HasToken()) {
+        DWORD now = GetTickCount();
+        // Retry every 60 seconds (avoid hammering Discord API)
+        if (now - last_validate_attempt_time_ >= 60000) {
+            last_validate_attempt_time_ = now;
+            if (log_callback_) log_callback_("Retrying token validation...");
+            has_valid_token_ = api_.ValidateToken();
+            if (has_valid_token_) {
+                last_sent_process_.clear(); // force re-send
+                UpdateStatus("Connected");
+                if (log_callback_) log_callback_("Token validated successfully on retry");
+                return true;
+            }
+            if (log_callback_) log_callback_("Token validation retry failed (network may not be ready)");
+        }
+    }
+
     UpdateStatus("No valid token");
     if (log_callback_) log_callback_("No valid token - waiting for re-authentication");
     return false;
