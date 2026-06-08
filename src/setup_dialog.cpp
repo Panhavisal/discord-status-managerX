@@ -327,29 +327,33 @@ std::string TryAutoExtractToken(HINSTANCE h_instance) {
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
 
-    // Do the extraction
-    auto tokens = TokenExtractor::Extract();
-
-    // Find the first valid token
+    // Do the extraction (wrap in try/catch to ensure window cleanup)
     std::string valid_token;
-    for (auto& t : tokens) {
-        if (t.is_valid && !t.token.empty()) {
-            valid_token = t.token;
-            break;
-        }
-    }
+    try {
+        auto tokens = TokenExtractor::Extract();
 
-    // If no pre-validated token, try validating remaining ones
-    if (valid_token.empty()) {
+        // Find the first valid token
         for (auto& t : tokens) {
-            if (!t.token.empty()) {
-                std::string username;
-                if (TokenExtractor::ValidateToken(t.token, username)) {
-                    valid_token = t.token;
-                    break;
+            if (t.is_valid && !t.token.empty()) {
+                valid_token = t.token;
+                break;
+            }
+        }
+
+        // If no pre-validated token, try validating remaining ones
+        if (valid_token.empty()) {
+            for (auto& t : tokens) {
+                if (!t.token.empty()) {
+                    std::string username;
+                    if (TokenExtractor::ValidateToken(t.token, username)) {
+                        valid_token = t.token;
+                        break;
+                    }
                 }
             }
         }
+    } catch (...) {
+        // Ensure window cleanup even if extraction throws
     }
 
     DestroyWindow(hwnd);

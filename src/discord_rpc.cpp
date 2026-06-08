@@ -47,14 +47,20 @@ void DiscordRpcClient::Stop() {
     running_ = false;
 
     if (reader_thread_.joinable()) {
-        // If the pipe is connected, send a close frame so the reader
-        // thread doesn't block on ReadFile forever
+        std::lock_guard<std::mutex> lock(mutex_);
         if (pipe_ != INVALID_HANDLE_VALUE) {
+            // Cancel pending I/O so ReadFile in reader thread unblocks
+            CancelIo(pipe_);
+            // Send close frame (best effort, ignore failure)
             SendFrame(OPCODE_CLOSE, "{}");
-            // Disconnect the pipe so ReadFile unblocks
+            // Close the pipe — reader thread will detect this
             CloseHandle(pipe_);
             pipe_ = INVALID_HANDLE_VALUE;
         }
+    }
+
+    // Join outside the mutex to avoid deadlock (reader thread also acquires mutex_)
+    if (reader_thread_.joinable()) {
         reader_thread_.join();
     }
 
@@ -239,6 +245,8 @@ void DiscordRpcClient::ReaderThread() {
 bool DiscordRpcClient::SendFrame(uint32_t opcode, const std::string& payload) {
     if (pipe_ == INVALID_HANDLE_VALUE) return false;
 
+    // Guard against integer truncation on 64-bit platforms
+    if (payload.size() > UINT32_MAX) return false;
     uint32_t len = static_cast<uint32_t>(payload.size());
 
     // Write opcode (4 bytes, little-endian)
@@ -279,7 +287,13 @@ bool DiscordRpcClient::ReadFrame(uint32_t& opcode, std::string& payload, DWORD t
 
     // Read the 8-byte header (opcode + length) with timeout
     BOOL ok = ReadFile(pipe_, header, 8, &bytes_read, &overlapped);
-    if (!ok && GetLastError() != ERROR_IO_PENDING) {
+    if (ok) {
+        // Synchronous completion — validate bytes read
+        if (bytes_read != 8) {
+            cleanup();
+            return false;
+        }
+    } else if (GetLastError() != ERROR_IO_PENDING) {
         cleanup();
         return false;
     }

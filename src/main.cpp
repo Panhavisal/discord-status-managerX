@@ -28,14 +28,22 @@ static std::wstring Utf8ToWide(const std::string& str) {
 
 static const wchar_t SPLASH_CLASS[] = L"DiscordPresenceSplashWnd";
 
+// Splash window state: tracks both the window and its font for leak-free cleanup
+struct SplashState {
+    HWND hwnd = nullptr;
+    HFONT hFont = nullptr;
+};
+
 static LRESULT CALLBACK SplashWndProc(HWND hwnd, UINT msg,
                                        WPARAM wparam, LPARAM lparam) {
     return DefWindowProcW(hwnd, msg, wparam, lparam);
 }
 
 // Shows a small centered window with a status message for a few seconds.
-// Returns the HWND so the caller can update the text or close it.
-static HWND ShowSplash(HINSTANCE h_instance, const std::wstring& message) {
+// Returns the SplashState so the caller can update the text or close it.
+static SplashState ShowSplash(HINSTANCE h_instance, const std::wstring& message) {
+    SplashState state;
+
     static bool class_registered = false;
     if (!class_registered) {
         WNDCLASSEXW wc = {};
@@ -61,7 +69,7 @@ static HWND ShowSplash(HINSTANCE h_instance, const std::wstring& message) {
         WIDTH, HEIGHT,
         nullptr, nullptr, h_instance, nullptr
     );
-    if (!hwnd) return nullptr;
+    if (!hwnd) return state;
 
     // Center on screen
     RECT rc;
@@ -80,6 +88,14 @@ static HWND ShowSplash(HINSTANCE h_instance, const std::wstring& message) {
         WS_CHILD | WS_VISIBLE | SS_CENTER,
         10, 25, WIDTH - 40, 40,
         hwnd, nullptr, h_instance, nullptr);
+
+    if (!hLabel) {
+        // Label creation failed — clean up font immediately
+        DeleteObject(hFont);
+        DestroyWindow(hwnd);
+        return state;
+    }
+
     SendMessageW(hLabel, WM_SETFONT, reinterpret_cast<WPARAM>(hFont), TRUE);
     SetWindowTextW(hLabel, message.c_str());
 
@@ -93,41 +109,42 @@ static HWND ShowSplash(HINSTANCE h_instance, const std::wstring& message) {
         DispatchMessageW(&msg);
     }
 
-    return hwnd;
+    state.hwnd = hwnd;
+    state.hFont = hFont;
+    return state;
 }
 
 // Update splash text
-static void UpdateSplash(HWND hwnd, const std::wstring& message) {
-    HWND hLabel = FindWindowExW(hwnd, nullptr, L"STATIC", nullptr);
+static void UpdateSplash(const SplashState& state, const std::wstring& message) {
+    if (!state.hwnd) return;
+    HWND hLabel = FindWindowExW(state.hwnd, nullptr, L"STATIC", nullptr);
     if (hLabel) {
         SetWindowTextW(hLabel, message.c_str());
     }
     // Process messages so the update paints
     MSG msg;
-    while (PeekMessageW(&msg, hwnd, 0, 0, PM_REMOVE)) {
+    while (PeekMessageW(&msg, state.hwnd, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
 }
 
 // Close and clean up splash
-static void CloseSplash(HWND hwnd) {
-    if (!hwnd) return;
+static void CloseSplash(SplashState& state) {
+    if (!state.hwnd) return;
     // Pump remaining messages briefly so the window finishes painting
     MSG msg;
-    while (PeekMessageW(&msg, hwnd, 0, 0, PM_REMOVE)) {
+    while (PeekMessageW(&msg, state.hwnd, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
-    // Extract the font before destroying
-    HWND hLabel = FindWindowExW(hwnd, nullptr, L"STATIC", nullptr);
-    HFONT hFont = nullptr;
-    if (hLabel) {
-        hFont = reinterpret_cast<HFONT>(
-            SendMessageW(hLabel, WM_GETFONT, 0, 0));
+    DestroyWindow(state.hwnd);
+    state.hwnd = nullptr;
+    // Unconditionally delete the font we created
+    if (state.hFont) {
+        DeleteObject(state.hFont);
+        state.hFont = nullptr;
     }
-    DestroyWindow(hwnd);
-    if (hFont) DeleteObject(hFont);
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +206,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     AppConfig config = Config::Load(config_path);
 
     // Show splash window
-    HWND splash = ShowSplash(hInstance, L"Starting Discord Presence Updater...");
+    SplashState splash = ShowSplash(hInstance, L"Starting Discord Presence Updater...");
 
     // Try to load a previously saved token first
     std::string token = TokenStore::Load();
@@ -206,7 +223,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         std::string username;
         if (TokenExtractor::ValidateToken(token, username)) {
             std::wstring status = L"Connected as " + Utf8ToWide(username);
-            UpdateSplash(splash, status.c_str());
+            UpdateSplash(splash, status);
         } else {
             // Saved token is invalid — clear it and try other methods
             token.clear();
@@ -218,7 +235,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     // If no saved token, try auto-extraction from Discord local storage
     if (token.empty()) {
         CloseSplash(splash);
-        splash = nullptr;
         token = TryAutoExtractToken(hInstance);
     }
 
@@ -232,6 +248,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         token = ShowSetupDialog(hInstance, nullptr);
         if (token.empty()) {
             // User cancelled — exit
+            CloseSplash(splash);
             OleUninitialize();
             return 0;
         }
@@ -241,8 +258,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     TokenStore::Save(token);
 
     // Show connected splash (if not already showing)
-    if (!splash) {
+    if (!splash.hwnd) {
         splash = ShowSplash(hInstance, L"Connected!");
+    } else {
+        UpdateSplash(splash, L"Connected!");
     }
 
     // Create and start the worker thread

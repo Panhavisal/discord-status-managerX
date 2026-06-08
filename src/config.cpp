@@ -134,12 +134,18 @@ AppConfig Config::Load(const std::string& config_path) {
     cfg.enable_custom_status = root.value("enable_custom_status", true);
     cfg.enable_rich_presence = root.value("enable_rich_presence", true);
 
-    // Enforce minimum values to prevent tight loops or API spam
+    // Enforce minimum and maximum values to prevent tight loops, API spam, or overflow
     if (cfg.poll_interval_ms < 1000) {
         cfg.poll_interval_ms = 1000;
     }
+    if (cfg.poll_interval_ms > 60000) {
+        cfg.poll_interval_ms = 60000;
+    }
     if (cfg.update_interval_s < 5) {
         cfg.update_interval_s = 5;
+    }
+    if (cfg.update_interval_s > 3600) {
+        cfg.update_interval_s = 3600;
     }
 
     if (root.contains("activities") && root["activities"].is_object()) {

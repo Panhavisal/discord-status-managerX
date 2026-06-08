@@ -104,7 +104,7 @@ void Worker::RunLoop() {
 
         // 4. Update presence if changed and enough time has passed
         DWORD now = GetTickCount();
-        DWORD min_interval_ms = config_.update_interval_s * 1000;
+        DWORD min_interval_ms = static_cast<DWORD>(static_cast<uint64_t>(config_.update_interval_s) * 1000);
         bool time_ok;
         bool process_changed;
         {
