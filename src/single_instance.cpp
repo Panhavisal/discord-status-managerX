@@ -9,7 +9,8 @@ SingleInstanceGuard::SingleInstanceGuard(const std::wstring& mutex_name) {
 
 SingleInstanceGuard::~SingleInstanceGuard() {
     if (h_mutex_) {
-        ReleaseMutex(h_mutex_);
+        // Do not call ReleaseMutex — we never acquired ownership
+        // (bInitialOwner was FALSE in CreateMutexW). Just close the handle.
         CloseHandle(h_mutex_);
     }
 }

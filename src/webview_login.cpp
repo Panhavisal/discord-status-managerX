@@ -220,11 +220,11 @@ std::string ShowWebView2LoginDialog(HINSTANCE h_instance, HWND parent) {
         L"Log in to Discord to set your custom status.\r\n"
         L"Your credentials stay between you and Discord — this app never sees your password.");
 
-    // Build user data folder path (persistent temp for session survival)
-    wchar_t temp_path[MAX_PATH] = {};
-    GetTempPathW(MAX_PATH, temp_path);
-    std::wstring user_data_folder = std::wstring(temp_path) +
-        L"DiscordPresenceUpdater_WebView2";
+    // Build user data folder path (use LOCALAPPDATA instead of temp — more secure)
+    wchar_t local_appdata[MAX_PATH] = {};
+    SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, local_appdata);
+    std::wstring user_data_folder = std::wstring(local_appdata) +
+        L"\\DiscordPresenceUpdater\\WebView2";
 
     // ---------------------------------------------------------------
     // Create WebView2 environment (async callback chain)

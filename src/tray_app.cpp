@@ -23,11 +23,15 @@ TrayApp::TrayApp(HINSTANCE h_instance, const std::string& tooltip)
 
 TrayApp::~TrayApp() {
     RemoveTrayIcon();
-    DrainPendingTooltips();
     if (hwnd_) {
+        // DestroyWindow processes remaining WM_TRAY_UPDATE messages,
+        // which consume entries from pending_tooltips_. After this,
+        // no more WM_TRAY_UPDATE messages can arrive (window is gone),
+        // so it's safe to drain the remaining shared_ptrs.
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
     }
+    DrainPendingTooltips();
     // Note: h_icon_ was loaded with LR_SHARED, so DestroyIcon is not needed.
     // Shared icons are managed by the system and are valid until the module is unloaded.
     UnregisterClassW(L"DiscordPresenceTrayWnd", h_instance_);
@@ -152,8 +156,8 @@ void TrayApp::AddTrayIcon() {
     nid_.hIcon            = h_icon_ ? h_icon_ :
                             LoadIcon(nullptr, IDI_APPLICATION);
 
-    // Set tooltip
-    std::wstring tip = tooltip_.substr(0, 127); // NOTIFYICONDATA limit
+    // Set tooltip (126 chars max to avoid splitting a UTF-16 surrogate pair)
+    std::wstring tip = tooltip_.substr(0, 126);
     wcscpy_s(nid_.szTip, tip.c_str());
 
     Shell_NotifyIconW(NIM_ADD, &nid_);
@@ -261,7 +265,7 @@ LRESULT TrayApp::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         auto* text_ptr = reinterpret_cast<std::string*>(lparam);
         if (text_ptr) {
             std::wstring wide = Utf8ToWide(*text_ptr);
-            wide = wide.substr(0, 127);
+            wide = wide.substr(0, 126);
             tooltip_ = wide;
             wcscpy_s(nid_.szTip, wide.c_str());
             Shell_NotifyIconW(NIM_MODIFY, &nid_);
@@ -318,7 +322,7 @@ LRESULT TrayApp::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         if (wparam == TIMER_TOOLTIP && tooltip_provider_) {
             std::string text = tooltip_provider_();
             std::wstring wide = Utf8ToWide(text);
-            wide = wide.substr(0, 127);
+            wide = wide.substr(0, 126);
             if (wide != tooltip_) {
                 tooltip_ = wide;
                 wcscpy_s(nid_.szTip, wide.c_str());

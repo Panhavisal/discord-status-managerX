@@ -27,13 +27,22 @@ std::string Config::GetDefaultConfigPath() {
 
 ActivityConfig Config::ParseActivity(const json& obj) {
     ActivityConfig cfg;
-    cfg.text       = obj.value("text", "");
-    cfg.emoji_name = obj.value("emoji_name", "");
+    cfg.text            = obj.value("text", "");
+    cfg.emoji_name      = obj.value("emoji_name", "");
+    cfg.rp_details      = obj.value("rp_details", "");
+    cfg.rp_state        = obj.value("rp_state", "");
+    cfg.rp_large_image  = obj.value("rp_large_image", "");
+    cfg.rp_large_text   = obj.value("rp_large_text", "");
+    cfg.rp_small_image  = obj.value("rp_small_image", "");
+    cfg.rp_small_text   = obj.value("rp_small_text", "");
     return cfg;
 }
 
 void Config::WriteDefaultConfig(const std::string& path) {
     json default_cfg = {
+        {"application_id", ""},
+        {"enable_custom_status", true},
+        {"enable_rich_presence", true},
         {"poll_interval_ms", 5000},
         {"update_interval_s", 30},
         {"activities", {
@@ -83,14 +92,18 @@ void Config::WriteDefaultConfig(const std::string& path) {
             {"fork.exe",               {{"text", "Using Git"},                   {"emoji_name", ""}}}
         }},
         {"default_activity", {
-            {"text", "Idle"},
-            {"emoji_name", ""}
+            {"text", "Staying low..."},
+            {"emoji_name", "\xf0\x9f\xab\xa5"}  // 🫥 (UTF-8 encoded)
         }}
     };
 
     std::ofstream file(path);
     if (file.is_open()) {
         file << default_cfg.dump(2);
+        file.close();
+        if (!file.good()) {
+            OutputDebugStringA("Config: Failed to write default config file\n");
+        }
     }
 }
 
@@ -100,20 +113,34 @@ AppConfig Config::Load(const std::string& config_path) {
     std::ifstream file(config_path);
     if (!file.is_open()) {
         WriteDefaultConfig(config_path);
-        cfg.default_activity = {"Idle", ""};
+        cfg.default_activity = {"Staying low...", "\xf0\x9f\xab\xa5"};
         return cfg;
     }
 
     json root;
     try {
         file >> root;
-    } catch (const json::parse_error&) {
-        cfg.default_activity = {"Idle", ""};
+    } catch (const json::parse_error& e) {
+        OutputDebugStringA("Config: Failed to parse config file: ");
+        OutputDebugStringA(e.what());
+        OutputDebugStringA("\n");
+        cfg.default_activity = {"Staying low...", "\xf0\x9f\xab\xa5"};
         return cfg;
     }
 
     cfg.poll_interval_ms = root.value("poll_interval_ms", 5000u);
     cfg.update_interval_s = root.value("update_interval_s", 30u);
+    cfg.application_id = root.value("application_id", "");
+    cfg.enable_custom_status = root.value("enable_custom_status", true);
+    cfg.enable_rich_presence = root.value("enable_rich_presence", true);
+
+    // Enforce minimum values to prevent tight loops or API spam
+    if (cfg.poll_interval_ms < 1000) {
+        cfg.poll_interval_ms = 1000;
+    }
+    if (cfg.update_interval_s < 5) {
+        cfg.update_interval_s = 5;
+    }
 
     if (root.contains("activities") && root["activities"].is_object()) {
         for (auto& [key, val] : root["activities"].items()) {
@@ -125,7 +152,7 @@ AppConfig Config::Load(const std::string& config_path) {
     if (root.contains("default_activity") && root["default_activity"].is_object()) {
         cfg.default_activity = ParseActivity(root["default_activity"]);
     } else {
-        cfg.default_activity = {"Idle", ""};
+        cfg.default_activity = {"Staying low...", "\xf0\x9f\xab\xa5"};
     }
 
     return cfg;

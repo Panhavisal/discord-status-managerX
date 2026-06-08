@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <wininet.h>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 #pragma comment(lib, "wininet.lib")
@@ -18,7 +19,18 @@ DiscordApi::DiscordApi(const std::string& token)
 DiscordApi::~DiscordApi() = default;
 
 void DiscordApi::SetToken(const std::string& token) {
+    std::lock_guard<std::mutex> lock(mutex_);
     token_ = token;
+}
+
+std::string DiscordApi::GetUsername() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return username_;
+}
+
+bool DiscordApi::HasToken() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return !token_.empty();
 }
 
 // ---------------------------------------------------------------------------
@@ -26,6 +38,12 @@ void DiscordApi::SetToken(const std::string& token) {
 // ---------------------------------------------------------------------------
 
 bool DiscordApi::ValidateToken() {
+    std::string token_copy;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        token_copy = token_;
+    }
+
     HINTERNET hInternet = InternetOpenA("DiscordPresenceUpdater/1.0",
                                           INTERNET_OPEN_TYPE_DIRECT,
                                           nullptr, nullptr, 0);
@@ -55,9 +73,14 @@ bool DiscordApi::ValidateToken() {
         return false;
     }
 
-    std::string auth_header = "Authorization: " + token_;
-    HttpSendRequestA(hRequest, auth_header.c_str(),
-                      static_cast<DWORD>(auth_header.length()), nullptr, 0);
+    std::string auth_header = "Authorization: " + token_copy;
+    if (!HttpSendRequestA(hRequest, auth_header.c_str(),
+                          static_cast<DWORD>(auth_header.length()), nullptr, 0)) {
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return false;
+    }
 
     DWORD status_code = 0;
     DWORD status_len = sizeof(status_code);
@@ -76,7 +99,9 @@ bool DiscordApi::ValidateToken() {
         if (!resp.is_discarded()) {
             std::string user = resp.value("username", "");
             std::string disc = resp.value("discriminator", "");
-            username_ = disc == "0" ? user : user + "#" + disc;
+            std::string username = disc == "0" ? user : user + "#" + disc;
+            std::lock_guard<std::mutex> lock(mutex_);
+            username_ = username;
         }
     }
 
@@ -91,6 +116,12 @@ bool DiscordApi::ValidateToken() {
 // ---------------------------------------------------------------------------
 
 ApiResult DiscordApi::PatchSettings(const std::string& json_body) {
+    std::string token_copy;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        token_copy = token_;
+    }
+
     HINTERNET hInternet = InternetOpenA("DiscordPresenceUpdater/1.0",
                                           INTERNET_OPEN_TYPE_DIRECT,
                                           nullptr, nullptr, 0);
@@ -120,18 +151,34 @@ ApiResult DiscordApi::PatchSettings(const std::string& json_body) {
         return ApiResult::Error;
     }
 
-    // Send headers
-    std::string headers = "Authorization: " + token_ + "\r\n"
+    // Send headers + body
+    std::string headers = "Authorization: " + token_copy + "\r\n"
                           "Content-Type: application/json\r\n";
-    HttpSendRequestA(hRequest, headers.c_str(),
-                      static_cast<DWORD>(headers.length()),
-                      const_cast<char*>(json_body.c_str()),
-                      static_cast<DWORD>(json_body.length()));
+    // Copy json_body to a mutable buffer for HttpSendRequestA
+    std::vector<char> body_buf(json_body.begin(), json_body.end());
+    if (!HttpSendRequestA(hRequest, headers.c_str(),
+                           static_cast<DWORD>(headers.length()),
+                           body_buf.data(),
+                           static_cast<DWORD>(body_buf.size()))) {
+        InternetCloseHandle(hRequest);
+        InternetCloseHandle(hConnect);
+        InternetCloseHandle(hInternet);
+        return ApiResult::Error;
+    }
 
     DWORD status_code = 0;
     DWORD status_len = sizeof(status_code);
     HttpQueryInfoA(hRequest, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
                     &status_code, &status_len, nullptr);
+
+    // Drain the response body to properly close the connection
+    {
+        char drain_buf[4096];
+        DWORD drain_read = 0;
+        while (InternetReadFile(hRequest, drain_buf, sizeof(drain_buf), &drain_read) && drain_read > 0) {
+            // Discard response body
+        }
+    }
 
     InternetCloseHandle(hRequest);
     InternetCloseHandle(hConnect);

@@ -1,4 +1,7 @@
 {
+  "application_id": "",
+  "enable_custom_status": true,
+  "enable_rich_presence": true,
   "poll_interval_ms": 5000,
   "update_interval_s": 30,
   "activities": {

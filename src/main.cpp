@@ -11,6 +11,17 @@
 #include <windows.h>
 #include <ole2.h>
 
+// UTF-8 to wide string conversion (handles non-ASCII usernames correctly)
+static std::wstring Utf8ToWide(const std::string& str) {
+    if (str.empty()) return L"";
+    int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(),
+                                   static_cast<int>(str.size()), nullptr, 0);
+    std::wstring result(len, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(),
+                        static_cast<int>(str.size()), &result[0], len);
+    return result;
+}
+
 // ---------------------------------------------------------------------------
 // Splash window: shows status briefly before going to tray
 // ---------------------------------------------------------------------------
@@ -127,6 +138,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     // --- Command-line argument handling ---
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (!argv) {
+        // CommandLineToArgvW failed — treat as no arguments
+        argc = 0;
+    }
 
     bool install   = false;
     bool uninstall = false;
@@ -190,7 +205,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
 
         std::string username;
         if (TokenExtractor::ValidateToken(token, username)) {
-            std::wstring status = L"Connected as " + std::wstring(username.begin(), username.end());
+            std::wstring status = L"Connected as " + Utf8ToWide(username);
             UpdateSplash(splash, status.c_str());
         } else {
             // Saved token is invalid — clear it and try other methods
@@ -285,7 +300,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
     }
 
     // Keep splash visible for a moment so user sees the "Connected" message
-    Sleep(1500);
+    // Use a message-pumping wait instead of Sleep() to keep the tray responsive
+    DWORD splash_start = GetTickCount();
+    while (GetTickCount() - splash_start < 1500) {
+        MSG msg;
+        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        Sleep(50);
+    }
     CloseSplash(splash);
 
     // Clean up the splash window class (no longer needed)

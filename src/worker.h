@@ -8,6 +8,7 @@
 #include <functional>
 #include "config.h"
 #include "discord_api.h"
+#include "discord_rpc.h"
 #include "process_monitor.h"
 #include "token_extractor.h"
 
@@ -54,19 +55,22 @@ private:
     WorkerMode      mode_ = WorkerMode::GUI;
     ProcessMonitor  monitor_;
     DiscordApi      api_;
+    DiscordRpcClient rpc_;
 
+    std::mutex      callback_mutex_;
     LogCallback     log_callback_;
+
     std::thread     worker_thread_;
     std::atomic<bool> stop_requested_{false};
 
-    // Current presence state (to avoid redundant updates)
+    // Token/presence state — protected by state_mutex_
+    mutable std::mutex state_mutex_;
+    bool            has_valid_token_ = false;
     std::string     last_sent_process_; // empty = nothing sent, "idle" = default sent
     DWORD           last_update_time_ = 0;
+    DWORD           last_validate_attempt_time_ = 0;
+    int64_t         activity_start_time_ = 0;  // Unix epoch ms for Rich Presence timestamps
 
     mutable std::mutex status_mutex_;
     std::string     status_text_ = "Starting...";
-
-    // Token state
-    bool            has_valid_token_ = false;
-    DWORD           last_validate_attempt_time_ = 0; // for retry cooldown
 };

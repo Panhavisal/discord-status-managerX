@@ -70,12 +70,6 @@ The service is configured for **automatic (delayed) startup** — it starts afte
 sc query DiscordPresenceUpdater
 ```
 
-### 4. Check Service Status
-
-```powershell
-sc query DiscordPresenceUpdater
-```
-
 You should see:
 ```
 STATE              : 4  RUNNING

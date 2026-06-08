@@ -153,12 +153,14 @@ bool ServiceManager::Uninstall() {
         }
     }
 
-    if (DeleteService(h_svc)) {
+    bool delete_ok = DeleteService(h_svc) != 0;
+    if (delete_ok) {
         MessageBoxW(nullptr, L"Service uninstalled successfully.", L"Uninstall Service", MB_OK | MB_ICONINFORMATION);
     } else {
         DWORD err = GetLastError();
         if (err == ERROR_SERVICE_MARKED_DELETE) {
             MessageBoxW(nullptr, L"Service marked for deletion.\nIt will be fully removed after stopping.", L"Uninstall Service", MB_OK | MB_ICONINFORMATION);
+            delete_ok = true;  // Marked for deletion is acceptable
         } else {
             wchar_t msg[512];
             swprintf_s(msg, L"Failed to delete service.\n\nError: %lu", err);
@@ -168,7 +170,7 @@ bool ServiceManager::Uninstall() {
 
     CloseServiceHandle(h_svc);
     CloseServiceHandle(h_sc);
-    return true;
+    return delete_ok;
 }
 
 // ---------------------------------------------------------------------------

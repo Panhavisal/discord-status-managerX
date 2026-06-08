@@ -22,3 +22,15 @@ Desktop.ini
 *.pdb
 *.ilk
 *.exp
+
+# Sensitive files
+*.dat
+token.dat
+
+# Build artifacts
+_deps/
+CMakeUserPresets.json
+cmake-build-*/
+
+# Claude Code
+.claude/

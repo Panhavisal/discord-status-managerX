@@ -118,12 +118,10 @@ std::string Load() {
         std::string token = DecryptData(encrypted_blob);
 
         // Trim whitespace (DPAPI preserves exact bytes, but just in case)
-        while (!token.empty() && (token.front() == ' ' || token.front() == '\t' ||
-                                   token.front() == '\n' || token.front() == '\r'))
-            token.erase(token.begin());
-        while (!token.empty() && (token.back() == ' ' || token.back() == '\t' ||
-                                   token.back() == '\n' || token.back() == '\r'))
-            token.pop_back();
+        auto start = token.find_first_not_of(" \t\n\r");
+        auto end = token.find_last_not_of(" \t\n\r");
+        if (start == std::string::npos) return "";
+        token = token.substr(start, end - start + 1);
 
         return token;
     }
@@ -132,12 +130,10 @@ std::string Load() {
     std::string token = contents;
 
     // Trim whitespace
-    while (!token.empty() && (token.front() == ' ' || token.front() == '\t' ||
-                               token.front() == '\n' || token.front() == '\r'))
-        token.erase(token.begin());
-    while (!token.empty() && (token.back() == ' ' || token.back() == '\t' ||
-                               token.back() == '\n' || token.back() == '\r'))
-        token.pop_back();
+    auto start = token.find_first_not_of(" \t\n\r");
+    auto end = token.find_last_not_of(" \t\n\r");
+    if (start == std::string::npos) return "";
+    token = token.substr(start, end - start + 1);
 
     return token;
 }
@@ -146,16 +142,14 @@ std::string Load() {
 // Save — encrypts with DPAPI before writing
 // ---------------------------------------------------------------------------
 
-void Save(const std::string& token, bool /*machine_scope*/) {
+void Save(const std::string& token) {
     // Encrypt the token (always machine-scope for cross-account access)
     std::vector<uint8_t> encrypted = EncryptData(token);
     if (encrypted.empty()) {
-        // Encryption failed — fall back to plain text (shouldn't happen normally)
-        std::string path = GetFilePath();
-        std::ofstream file(path, std::ios::trunc);
-        if (file.is_open()) {
-            file << token;
-        }
+        // Encryption failed — do NOT fall back to plain text.
+        // Writing an unencrypted token to disk is a security risk.
+        // The caller should handle the failure (token will not persist).
+        OutputDebugStringA("TokenStore: DPAPI encryption failed; token not saved.\n");
         return;
     }
 

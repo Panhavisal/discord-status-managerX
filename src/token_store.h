@@ -16,8 +16,10 @@ std::string GetFilePath();
 std::string Load();
 
 // Save a token to token.dat (encrypted with DPAPI, overwrites if exists).
-// Use machine-level encryption if 'machine_scope' is true (for service mode).
-void Save(const std::string& token, bool machine_scope = false);
+// Always uses machine-level encryption (CRYPTPROTECT_LOCAL_MACHINE) so the
+// token is accessible by both the GUI (user session) and the service (LocalSystem).
+// If DPAPI encryption fails, the token is NOT saved (never falls back to plaintext).
+void Save(const std::string& token);
 
 // Delete the saved token file.
 void Clear();

@@ -10,6 +10,16 @@ static std::string ToLower(std::string s) {
     return s;
 }
 
+// Convert wide string (from PROCESSENTRY32W) to UTF-8 lowercase
+static std::string WideToUtf8Lower(const wchar_t* wide) {
+    if (!wide || !wide[0]) return "";
+    int len = WideCharToMultiByte(CP_UTF8, 0, wide, -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return "";
+    std::string result(len - 1, '\0');  // len includes null terminator
+    WideCharToMultiByte(CP_UTF8, 0, wide, -1, &result[0], len, nullptr, nullptr);
+    return ToLower(result);
+}
+
 std::unordered_set<std::string> ProcessMonitor::GetRunningProcessNames() const {
     std::unordered_set<std::string> names;
 
@@ -18,13 +28,13 @@ std::unordered_set<std::string> ProcessMonitor::GetRunningProcessNames() const {
         return names;
     }
 
-    PROCESSENTRY32 pe = {};
+    PROCESSENTRY32W pe = {};
     pe.dwSize = sizeof(pe);
 
-    if (Process32First(snap, &pe)) {
+    if (Process32FirstW(snap, &pe)) {
         do {
-            names.insert(ToLower(pe.szExeFile));
-        } while (Process32Next(snap, &pe));
+            names.insert(WideToUtf8Lower(pe.szExeFile));
+        } while (Process32NextW(snap, &pe));
     }
 
     CloseHandle(snap);
@@ -37,18 +47,18 @@ std::string ProcessMonitor::FindMatchingProcess(const std::unordered_set<std::st
         return "";
     }
 
-    PROCESSENTRY32 pe = {};
+    PROCESSENTRY32W pe = {};
     pe.dwSize = sizeof(pe);
 
     std::string result;
-    if (Process32First(snap, &pe)) {
+    if (Process32FirstW(snap, &pe)) {
         do {
-            std::string name = ToLower(pe.szExeFile);
+            std::string name = WideToUtf8Lower(pe.szExeFile);
             if (targets.count(name)) {
                 result = name;
                 break;
             }
-        } while (Process32Next(snap, &pe));
+        } while (Process32NextW(snap, &pe));
     }
 
     CloseHandle(snap);
@@ -71,17 +81,17 @@ std::string ProcessMonitor::GetForegroundProcessName() const {
         return "";
     }
 
-    PROCESSENTRY32 pe = {};
+    PROCESSENTRY32W pe = {};
     pe.dwSize = sizeof(pe);
 
     std::string result;
-    if (Process32First(snap, &pe)) {
+    if (Process32FirstW(snap, &pe)) {
         do {
             if (pe.th32ProcessID == pid) {
-                result = ToLower(pe.szExeFile);
+                result = WideToUtf8Lower(pe.szExeFile);
                 break;
             }
-        } while (Process32Next(snap, &pe));
+        } while (Process32NextW(snap, &pe));
     }
 
     CloseHandle(snap);

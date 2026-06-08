@@ -39,6 +39,7 @@ add_executable(${PROJECT_NAME} WIN32
     src/main.cpp
     src/config.cpp
     src/discord_api.cpp
+    src/discord_rpc.cpp
     src/token_extractor.cpp
     src/process_monitor.cpp
     src/tray_app.cpp
