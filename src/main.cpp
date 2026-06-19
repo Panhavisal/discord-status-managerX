@@ -160,27 +160,29 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int) {
         argc = 0;
     }
 
-    bool install   = false;
-    bool uninstall = false;
-    bool service   = false;
+    bool install     = false;
+    bool uninstall   = false;
+    bool service     = false;
+    bool start_svc   = false;
+    bool stop_svc    = false;
+    bool restart_svc = false;
 
     for (int i = 1; i < argc; ++i) {
         std::wstring arg(argv[i]);
-        if (arg == L"--install" || arg == L"-i")        install   = true;
-        else if (arg == L"--uninstall" || arg == L"-u")  uninstall = true;
-        else if (arg == L"--service" || arg == L"-s")    service   = true;
+        if      (arg == L"--install"     || arg == L"-i") install     = true;
+        else if (arg == L"--uninstall"   || arg == L"-u") uninstall   = true;
+        else if (arg == L"--service"     || arg == L"-s") service     = true;
+        else if (arg == L"--start-svc")                   start_svc   = true;
+        else if (arg == L"--stop-svc")                    stop_svc    = true;
+        else if (arg == L"--restart-svc")                 restart_svc = true;
     }
     LocalFree(argv);
 
-    if (install) {
-        bool ok = ServiceManager::Install();
-        return ok ? 0 : 1;
-    }
-
-    if (uninstall) {
-        bool ok = ServiceManager::Uninstall();
-        return ok ? 0 : 1;
-    }
+    if (install)     { return ServiceManager::Install()     ? 0 : 1; }
+    if (uninstall)   { return ServiceManager::Uninstall()   ? 0 : 1; }
+    if (start_svc)   { return ServiceManager::StartSvc()    ? 0 : 1; }
+    if (stop_svc)    { return ServiceManager::StopSvc()     ? 0 : 1; }
+    if (restart_svc) { return ServiceManager::RestartSvc()  ? 0 : 1; }
 
     if (service) {
         ServiceManager::RunAsService();

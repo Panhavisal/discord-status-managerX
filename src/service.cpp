@@ -174,6 +174,170 @@ bool ServiceManager::Uninstall() {
 }
 
 // ---------------------------------------------------------------------------
+// Start / Stop / Restart
+// ---------------------------------------------------------------------------
+
+bool ServiceManager::StartSvc() {
+    SC_HANDLE h_sc = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!h_sc) {
+        DWORD err = GetLastError();
+        wchar_t msg[256];
+        swprintf_s(msg, L"Cannot open Service Control Manager.\n\nError: %lu\n\nRun as Administrator.", err);
+        MessageBoxW(nullptr, msg, L"Start Service — Error", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    SC_HANDLE h_svc = OpenServiceW(h_sc, kServiceNameW,
+                                    SERVICE_START | SERVICE_QUERY_STATUS);
+    if (!h_svc) {
+        DWORD err = GetLastError();
+        CloseServiceHandle(h_sc);
+        if (err == ERROR_SERVICE_DOES_NOT_EXIST) {
+            MessageBoxW(nullptr,
+                L"Service is not installed.\nUse \"Install Service\" first.",
+                L"Start Service", MB_OK | MB_ICONWARNING);
+        } else {
+            wchar_t msg[256];
+            swprintf_s(msg, L"Cannot open service.\n\nError: %lu", err);
+            MessageBoxW(nullptr, msg, L"Start Service — Error", MB_OK | MB_ICONERROR);
+        }
+        return false;
+    }
+
+    bool ok = true;
+    if (!StartServiceW(h_svc, 0, nullptr)) {
+        DWORD err = GetLastError();
+        if (err == ERROR_SERVICE_ALREADY_RUNNING) {
+            MessageBoxW(nullptr, L"Service is already running.",
+                        L"Start Service", MB_OK | MB_ICONINFORMATION);
+        } else {
+            wchar_t msg[256];
+            swprintf_s(msg, L"Failed to start service.\n\nError: %lu", err);
+            MessageBoxW(nullptr, msg, L"Start Service — Error", MB_OK | MB_ICONERROR);
+            ok = false;
+        }
+    } else {
+        MessageBoxW(nullptr, L"Service started successfully.",
+                    L"Start Service", MB_OK | MB_ICONINFORMATION);
+    }
+
+    CloseServiceHandle(h_svc);
+    CloseServiceHandle(h_sc);
+    return ok;
+}
+
+bool ServiceManager::StopSvc() {
+    SC_HANDLE h_sc = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!h_sc) {
+        DWORD err = GetLastError();
+        wchar_t msg[256];
+        swprintf_s(msg, L"Cannot open Service Control Manager.\n\nError: %lu\n\nRun as Administrator.", err);
+        MessageBoxW(nullptr, msg, L"Stop Service — Error", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    SC_HANDLE h_svc = OpenServiceW(h_sc, kServiceNameW,
+                                    SERVICE_STOP | SERVICE_QUERY_STATUS);
+    if (!h_svc) {
+        DWORD err = GetLastError();
+        CloseServiceHandle(h_sc);
+        if (err == ERROR_SERVICE_DOES_NOT_EXIST) {
+            MessageBoxW(nullptr, L"Service is not installed.",
+                        L"Stop Service", MB_OK | MB_ICONWARNING);
+        } else {
+            wchar_t msg[256];
+            swprintf_s(msg, L"Cannot open service.\n\nError: %lu", err);
+            MessageBoxW(nullptr, msg, L"Stop Service — Error", MB_OK | MB_ICONERROR);
+        }
+        return false;
+    }
+
+    SERVICE_STATUS status = {};
+    bool ok = true;
+    if (!ControlService(h_svc, SERVICE_CONTROL_STOP, &status)) {
+        DWORD err = GetLastError();
+        if (err == ERROR_SERVICE_NOT_ACTIVE) {
+            MessageBoxW(nullptr, L"Service is not running.",
+                        L"Stop Service", MB_OK | MB_ICONINFORMATION);
+        } else {
+            wchar_t msg[256];
+            swprintf_s(msg, L"Failed to stop service.\n\nError: %lu", err);
+            MessageBoxW(nullptr, msg, L"Stop Service — Error", MB_OK | MB_ICONERROR);
+            ok = false;
+        }
+    } else {
+        // Wait for the service to reach STOPPED (up to 10 s)
+        for (int i = 0; i < 10; ++i) {
+            if (!QueryServiceStatus(h_svc, &status)) break;
+            if (status.dwCurrentState == SERVICE_STOPPED) break;
+            Sleep(1000);
+        }
+        MessageBoxW(nullptr, L"Service stopped successfully.",
+                    L"Stop Service", MB_OK | MB_ICONINFORMATION);
+    }
+
+    CloseServiceHandle(h_svc);
+    CloseServiceHandle(h_sc);
+    return ok;
+}
+
+bool ServiceManager::RestartSvc() {
+    // Stop first (ignore errors — service may already be stopped).
+    SC_HANDLE h_sc = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (!h_sc) {
+        DWORD err = GetLastError();
+        wchar_t msg[256];
+        swprintf_s(msg, L"Cannot open Service Control Manager.\n\nError: %lu\n\nRun as Administrator.", err);
+        MessageBoxW(nullptr, msg, L"Restart Service — Error", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    SC_HANDLE h_svc = OpenServiceW(h_sc, kServiceNameW,
+                                    SERVICE_START | SERVICE_STOP | SERVICE_QUERY_STATUS);
+    if (!h_svc) {
+        DWORD err = GetLastError();
+        CloseServiceHandle(h_sc);
+        if (err == ERROR_SERVICE_DOES_NOT_EXIST) {
+            MessageBoxW(nullptr,
+                L"Service is not installed.\nUse \"Install Service\" first.",
+                L"Restart Service", MB_OK | MB_ICONWARNING);
+        } else {
+            wchar_t msg[256];
+            swprintf_s(msg, L"Cannot open service.\n\nError: %lu", err);
+            MessageBoxW(nullptr, msg, L"Restart Service — Error", MB_OK | MB_ICONERROR);
+        }
+        return false;
+    }
+
+    // Stop (best-effort)
+    SERVICE_STATUS status = {};
+    if (ControlService(h_svc, SERVICE_CONTROL_STOP, &status)) {
+        for (int i = 0; i < 10; ++i) {
+            if (!QueryServiceStatus(h_svc, &status)) break;
+            if (status.dwCurrentState == SERVICE_STOPPED) break;
+            Sleep(1000);
+        }
+    }
+
+    // Start
+    bool ok = true;
+    if (!StartServiceW(h_svc, 0, nullptr)) {
+        DWORD err = GetLastError();
+        wchar_t msg[256];
+        swprintf_s(msg, L"Failed to restart service.\n\nError: %lu", err);
+        MessageBoxW(nullptr, msg, L"Restart Service — Error", MB_OK | MB_ICONERROR);
+        ok = false;
+    } else {
+        MessageBoxW(nullptr, L"Service restarted successfully.",
+                    L"Restart Service", MB_OK | MB_ICONINFORMATION);
+    }
+
+    CloseServiceHandle(h_svc);
+    CloseServiceHandle(h_sc);
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
 // Run as Service
 // ---------------------------------------------------------------------------
 

@@ -15,6 +15,11 @@ public:
     // Uninstall (stop first, then delete) the service (requires elevation).
     static bool Uninstall();
 
+    // Start / stop / restart the service (all require elevation).
+    static bool StartSvc();
+    static bool StopSvc();
+    static bool RestartSvc();
+
     // Entry point when --service is specified.
     // Calls StartServiceCtrlDispatcher, which calls our ServiceMain.
     static void RunAsService();

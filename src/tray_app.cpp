@@ -4,6 +4,14 @@
 #include <shellapi.h>
 #include <memory>
 
+// Run this exe elevated with the given arguments.
+// Returns immediately (ShellExecuteW is async).
+static void RunElevated(const wchar_t* args) {
+    wchar_t exe[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exe, MAX_PATH);
+    ShellExecuteW(nullptr, L"runas", exe, args, nullptr, SW_SHOWNORMAL);
+}
+
 static std::wstring Utf8ToWide(const std::string& str) {
     if (str.empty()) return L"";
     int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(),
@@ -199,6 +207,16 @@ void TrayApp::ShowContextMenu(HWND hwnd) {
     AppendMenuW(hMenu, MF_STRING, IDM_LOGOUT,     L"Logout");
     AppendMenuW(hMenu, MF_STRING, IDM_EDIT_CONFIG, L"Edit Config");
 
+    // Service submenu
+    HMENU hSvcMenu = CreatePopupMenu();
+    AppendMenuW(hSvcMenu, MF_STRING, IDM_SVC_INSTALL,   L"Install Service");
+    AppendMenuW(hSvcMenu, MF_STRING, IDM_SVC_UNINSTALL, L"Uninstall Service");
+    AppendMenuW(hSvcMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hSvcMenu, MF_STRING, IDM_SVC_START,   L"Start Service");
+    AppendMenuW(hSvcMenu, MF_STRING, IDM_SVC_STOP,    L"Stop Service");
+    AppendMenuW(hSvcMenu, MF_STRING, IDM_SVC_RESTART, L"Restart Service");
+    AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSvcMenu), L"Service");
+
     // Separator
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
@@ -302,6 +320,12 @@ LRESULT TrayApp::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
                     nullptr, nullptr, SW_SHOWNORMAL);
             }
             break;
+
+        case IDM_SVC_INSTALL:   RunElevated(L"--install");     break;
+        case IDM_SVC_UNINSTALL: RunElevated(L"--uninstall");   break;
+        case IDM_SVC_START:     RunElevated(L"--start-svc");   break;
+        case IDM_SVC_STOP:      RunElevated(L"--stop-svc");    break;
+        case IDM_SVC_RESTART:   RunElevated(L"--restart-svc"); break;
 
         case IDM_QUIT:
             if (quit_callback_) quit_callback_();
