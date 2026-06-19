@@ -342,12 +342,12 @@ void ServiceManager::Log(const std::string& message) {
     // Always log to debugger (visible in DebugView, Visual Studio, etc.)
     OutputDebugStringA(("DiscordPresence: " + message + "\n").c_str());
 
-    // Log to Windows Event Log (visible in Event Viewer)
-    HANDLE h_source = RegisterEventSourceA(nullptr, kServiceName);
+    // Log to Windows Event Log — cache the source handle for the process lifetime
+    // rather than opening and closing it on every call.
+    static HANDLE h_source = RegisterEventSourceA(nullptr, kServiceName);
     if (h_source) {
         const char* strings[] = { message.c_str() };
         ReportEventA(h_source, EVENTLOG_INFORMATION_TYPE, 0, 1,
                      nullptr, 1, 0, strings, nullptr);
-        DeregisterEventSource(h_source);
     }
 }

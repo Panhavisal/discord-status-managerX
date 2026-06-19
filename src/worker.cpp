@@ -143,35 +143,43 @@ void Worker::RunLoop() {
 // ---------------------------------------------------------------------------
 
 bool Worker::EnsureTokenValid() {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    if (has_valid_token_) {
-        return true;
+    // Check state under lock without blocking — decide whether to retry.
+    bool should_retry = false;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (has_valid_token_) return true;
+        if (api_.HasToken()) {
+            DWORD now = GetTickCount();
+            if (now - last_validate_attempt_time_ >= 60000) {
+                last_validate_attempt_time_ = now;
+                should_retry = true;
+            }
+        }
     }
 
-    // If a token string is set but not yet validated, retry validation periodically.
-    if (api_.HasToken()) {
-        DWORD now = GetTickCount();
-        // Retry every 60 seconds (avoid hammering Discord API)
-        if (now - last_validate_attempt_time_ >= 60000) {
-            last_validate_attempt_time_ = now;
+    if (should_retry) {
+        {
+            std::lock_guard<std::mutex> cb_lock(callback_mutex_);
+            if (log_callback_) log_callback_("Retrying token validation...");
+        }
+        // Network call outside any lock — prevents blocking SetToken/ClearToken.
+        bool valid = api_.ValidateToken();
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            has_valid_token_ = valid;
+            if (valid) last_sent_process_.clear();
+        }
+        if (valid) {
+            UpdateStatus("Connected");
             {
                 std::lock_guard<std::mutex> cb_lock(callback_mutex_);
-                if (log_callback_) log_callback_("Retrying token validation...");
+                if (log_callback_) log_callback_("Token validated successfully on retry");
             }
-            has_valid_token_ = api_.ValidateToken();
-            if (has_valid_token_) {
-                last_sent_process_.clear(); // force re-send
-                UpdateStatus("Connected");
-                {
-                    std::lock_guard<std::mutex> cb_lock(callback_mutex_);
-                    if (log_callback_) log_callback_("Token validated successfully on retry");
-                }
-                return true;
-            }
-            {
-                std::lock_guard<std::mutex> cb_lock(callback_mutex_);
-                if (log_callback_) log_callback_("Token validation retry failed (network may not be ready)");
-            }
+            return true;
+        }
+        {
+            std::lock_guard<std::mutex> cb_lock(callback_mutex_);
+            if (log_callback_) log_callback_("Token validation retry failed (network may not be ready)");
         }
     }
 

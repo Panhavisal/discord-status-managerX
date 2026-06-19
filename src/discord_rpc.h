@@ -85,6 +85,7 @@ private:
     static constexpr uint32_t OPCODE_FRAME      = 1;
     static constexpr uint32_t OPCODE_CLOSE      = 2;
     static constexpr uint32_t OPCODE_PING       = 3;
+    static constexpr uint32_t OPCODE_PONG       = 4;
 
     // Reconnect interval in milliseconds
     static constexpr DWORD RECONNECT_INTERVAL_MS = 15000;

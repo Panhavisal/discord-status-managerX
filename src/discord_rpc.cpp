@@ -132,11 +132,10 @@ void DiscordRpcClient::ClearActivity() {
 bool DiscordRpcClient::ConnectToPipe() {
     // Try pipes \\.\pipe\discord-ipc-0 through \\.\pipe\discord-ipc-9
     for (int i = 0; i < 10; ++i) {
-        std::string pipe_name = "\\\\.\\pipe\\discord-ipc-" + std::to_string(i);
-        std::wstring wide_name(pipe_name.begin(), pipe_name.end());
+        std::wstring pipe_name = L"\\\\.\\pipe\\discord-ipc-" + std::to_wstring(i);
 
         HANDLE h = CreateFileW(
-            wide_name.c_str(),
+            pipe_name.c_str(),
             GENERIC_READ | GENERIC_WRITE,
             0,
             nullptr,
@@ -222,7 +221,7 @@ void DiscordRpcClient::ReaderThread() {
         if (opcode == OPCODE_PING) {
             // Respond with PONG (same payload)
             std::lock_guard<std::mutex> lock(mutex_);
-            SendFrame(OPCODE_FRAME, payload);
+            SendFrame(OPCODE_PONG, payload);
         } else if (opcode == OPCODE_CLOSE) {
             // Server is closing the connection
             connected_ = false;
